@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Controle de Fornecedores</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --navy:#1e3a5f; --navy-2:#16304f; --bg:#f1f4f8; --line:#e2e8f0; }
+  body { font-family:'Inter',sans-serif; background:var(--bg); color:#1f2937; font-size:14px; }
+
+  /* Cabeçalho padrão (faixa navy) */
+  .app-header { background:var(--navy); color:#fff; padding:14px 0; }
+  .app-header .wrap { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .app-header h1 { font-size:1.15rem; font-weight:700; margin:0; }
+  .app-header small { color:#b8c7dc; }
+  .btn-hdr { background:rgba(255,255,255,.12); color:#fff; border:0; width:38px; height:38px; border-radius:8px; }
+  .btn-hdr:hover { background:rgba(255,255,255,.25); color:#fff; }
+
+  .card { border:1px solid var(--line); border-radius:12px; box-shadow:0 1px 2px rgba(15,23,42,.04); }
+
+  /* KPIs */
+  .kpi { cursor:pointer; transition:.15s; }
+  .kpi:hover { transform:translateY(-2px); box-shadow:0 4px 10px rgba(15,23,42,.08); }
+  .kpi.active { outline:2px solid var(--navy); }
+  .kpi .num { font-size:1.6rem; font-weight:700; line-height:1; }
+  .kpi .lbl { font-size:.75rem; color:#64748b; text-transform:uppercase; letter-spacing:.03em; }
+
+  /* Pills de status */
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:.75rem; font-weight:600; white-space:nowrap; }
+  .st-acontatar { background:#e2e8f0; color:#475569; }
+  .st-contatado { background:#dbeafe; color:#1d4ed8; }
+  .st-respondeu { background:#dcfce7; color:#15803d; }
+  .st-semresposta { background:#fee2e2; color:#b91c1c; }
+  .st-avaliacao { background:#fef3c7; color:#b45309; }
+  .st-aprovado { background:#bbf7d0; color:#166534; }
+  .st-descartado { background:#f1f5f9; color:#94a3b8; text-decoration:line-through; }
+
+  table thead th { background:#f8fafc; font-size:.75rem; text-transform:uppercase; color:#64748b; letter-spacing:.03em; white-space:nowrap; }
+  table td { vertical-align:middle; }
+  .tbl-wrap { max-height:62vh; overflow:auto; }
+  .tbl-wrap thead th { position:sticky; top:0; z-index:1; }
+
+  .timeline { list-style:none; padding:0; margin:0; }
+  .timeline li { border-left:3px solid var(--line); padding:6px 0 6px 12px; margin-left:6px; position:relative; }
+  .timeline li::before { content:''; position:absolute; left:-7px; top:12px; width:11px; height:11px; border-radius:50%; background:var(--navy); }
+  .timeline .res-ok::before { background:#16a34a; }
+  .timeline .res-no::before { background:#dc2626; }
+  .timeline .res-wait::before { background:#2563eb; }
+
+  #loading { position:fixed; inset:0; background:rgba(255,255,255,.7); display:none; align-items:center; justify-content:center; z-index:2000; }
+  .overdue { color:#b91c1c; font-weight:600; }
+</style>
+</head>
+<body>
+
+<div class="app-header">
+  <div class="container-xxl wrap">
+    <div>
+      <h1><i class="bi bi-truck me-2"></i>Controle de Fornecedores</h1>
+      <small>Novos fornecedores: contatos, retornos e avaliação</small>
+    </div>
+    <div class="d-flex gap-2">
+      <button class="btn-hdr" title="Atualizar" onclick="carregar()"><i class="bi bi-arrow-clockwise"></i></button>
+      <button class="btn-hdr" title="Exportar CSV" onclick="exportarCSV()"><i class="bi bi-download"></i></button>
+      <button class="btn-hdr" title="Imprimir" onclick="window.print()"><i class="bi bi-printer"></i></button>
+      <button class="btn btn-light fw-semibold" onclick="abrirFornecedor()"><i class="bi bi-plus-lg me-1"></i>Novo fornecedor</button>
+    </div>
+  </div>
+</div>
+
+<div class="container-xxl py-3">
+
+  <!-- KPIs -->
+  <div class="row g-2 mb-3" id="kpis"></div>
+
+  <!-- Filtros -->
+  <div class="card mb-3">
+    <div class="card-body py-2">
+      <div class="row g-2 align-items-center">
+        <div class="col-md-5">
+          <div class="input-group input-group-sm">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input id="fBusca" class="form-control" placeholder="Buscar empresa, contato, CNPJ, categoria..." oninput="render()">
+          </div>
+        </div>
+        <div class="col-md-3">
+          <select id="fStatus" class="form-select form-select-sm" onchange="render()"></select>
+        </div>
+        <div class="col-md-3">
+          <select id="fCategoria" class="form-select form-select-sm" onchange="render()"></select>
+        </div>
+        <div class="col-md-1 text-end">
+          <button class="btn btn-sm btn-outline-secondary" onclick="limparFiltros()" title="Limpar filtros"><i class="bi bi-x-lg"></i></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabela -->
+  <div class="card">
+    <div class="tbl-wrap">
+      <table class="table table-hover mb-0">
+        <thead>
+          <tr>
+            <th>Empresa</th><th>Categoria</th><th>Contato</th><th>Telefone / E-mail</th>
+            <th>Status</th><th>Contatos</th><th>Último contato</th><th class="text-end">Ações</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div class="card-footer bg-white small text-muted" id="rodape"></div>
+  </div>
+</div>
+
+<!-- Modal: Fornecedor -->
+<div class="modal fade" id="mdlForn" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="mdlFornTitulo">Novo fornecedor</h5>
+        <button class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="fID">
+        <div class="row g-3">
+          <div class="col-md-8"><label class="form-label">Empresa *</label><input id="fEmpresa" class="form-control"></div>
+          <div class="col-md-4"><label class="form-label">CNPJ</label><input id="fCNPJ" class="form-control" placeholder="00.000.000/0000-00"></div>
+          <div class="col-md-6"><label class="form-label">Categoria (o que fornece)</label>
+            <input id="fCat" class="form-control" list="listaCat" placeholder="Ex.: Fio esmaltado, Usinagem, Embalagens"><datalist id="listaCat"></datalist></div>
+          <div class="col-md-6"><label class="form-label">Pessoa de contato</label><input id="fContato" class="form-control"></div>
+          <div class="col-md-4"><label class="form-label">Telefone / WhatsApp</label><input id="fTel" class="form-control"></div>
+          <div class="col-md-8"><label class="form-label">E-mail</label><input id="fEmail" type="email" class="form-control"></div>
+          <div class="col-md-8"><label class="form-label">Cidade</label><input id="fCidade" class="form-control"></div>
+          <div class="col-md-4"><label class="form-label">UF</label><input id="fUF" class="form-control" maxlength="2"></div>
+          <div class="col-md-4"><label class="form-label">Status</label><select id="fStatusForm" class="form-select"></select></div>
+          <div class="col-md-8"><label class="form-label">Observações</label><textarea id="fObs" class="form-control" rows="2"></textarea></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-primary" onclick="salvarFornecedor()"><i class="bi bi-check-lg me-1"></i>Salvar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Contatos / Histórico -->
+<div class="modal fade" id="mdlCont" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title" id="cTitulo"></h5>
+          <small class="text-muted" id="cSub"></small>
+        </div>
+        <button class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="cFornID">
+        <div class="card mb-3">
+          <div class="card-body">
+            <div class="fw-semibold mb-2"><i class="bi bi-telephone-plus me-1"></i>Registrar contato</div>
+            <div class="row g-2">
+              <div class="col-md-3"><label class="form-label small">Data</label><input id="cData" type="date" class="form-control form-control-sm"></div>
+              <div class="col-md-3"><label class="form-label small">Canal</label>
+                <select id="cCanal" class="form-select form-select-sm">
+                  <option>Telefone</option><option>WhatsApp</option><option>E-mail</option><option>Site / Formulário</option><option>Visita</option><option>Outro</option>
+                </select></div>
+              <div class="col-md-3"><label class="form-label small">Resultado</label>
+                <select id="cRes" class="form-select form-select-sm">
+                  <option>Atendeu</option><option>Respondeu</option><option>Aguardando retorno</option>
+                  <option>Não atendeu</option><option>Sem resposta</option><option>Enviou proposta</option>
+                </select></div>
+              <div class="col-md-3"><label class="form-label small">Quem contatou</label><input id="cResp" class="form-control form-control-sm"></div>
+              <div class="col-12"><label class="form-label small">Observações</label><textarea id="cObs" class="form-control form-control-sm" rows="2" placeholder="O que foi conversado, prazo de retorno, preços, condições..."></textarea></div>
+              <div class="col-12 text-end"><button class="btn btn-sm btn-primary" onclick="salvarContato()"><i class="bi bi-plus-lg me-1"></i>Adicionar ao histórico</button></div>
+            </div>
+          </div>
+        </div>
+        <div class="fw-semibold mb-2"><i class="bi bi-clock-history me-1"></i>Histórico</div>
+        <ul class="timeline" id="cLista"></ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="loading"><div class="spinner-border text-primary"></div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+/* ===== CONFIGURAÇÃO ===== */
+const API_URL = 'https://script.google.com/macros/s/AKfycbwl5HFsfsyaXjeDbm0DCtVicrGojykt12e84Zv4sG36CyS7mrCdW33O4AcODmvkMTj-3Q/exec'; // termina em /exec
+
+const STATUS = [
+  { nome:'A contatar',   cls:'st-acontatar' },
+  { nome:'Contatado',    cls:'st-contatado' },
+  { nome:'Respondeu',    cls:'st-respondeu' },
+  { nome:'Sem resposta', cls:'st-semresposta' },
+  { nome:'Em avaliação', cls:'st-avaliacao' },
+  { nome:'Aprovado',     cls:'st-aprovado' },
+  { nome:'Descartado',   cls:'st-descartado' }
+];
+const statusCls = n => (STATUS.find(s => s.nome === n) || STATUS[0]).cls;
+
+let forn = [], cont = [], kpiFiltro = '';
+let mdlForn, mdlCont;
+
+/* ===== JSONP ===== */
+function api(params) {
+  return new Promise((resolve, reject) => {
+    if (API_URL.indexOf('COLE_AQUI') === 0) { reject(new Error('Configure a API_URL no index.html.')); return; }
+    const cb = 'cb_' + Date.now() + Math.floor(Math.random() * 1000);
+    const q = new URLSearchParams(Object.assign({}, params, { callback: cb }));
+    const s = document.createElement('script');
+    const timer = setTimeout(() => { limpar(); reject(new Error('Tempo esgotado ao falar com o servidor.')); }, 30000);
+    function limpar() { clearTimeout(timer); delete window[cb]; s.remove(); }
+    window[cb] = r => { limpar(); r && r.ok ? resolve(r) : reject(new Error((r && r.error) || 'Erro desconhecido')); };
+    s.onerror = () => { limpar(); reject(new Error('Falha de conexão com o servidor.')); };
+    s.src = API_URL + '?' + q.toString();
+    document.body.appendChild(s);
+  });
+}
+const loading = v => document.getElementById('loading').style.display = v ? 'flex' : 'none';
+async function chamar(params) {
+  loading(true);
+  try { return await api(params); }
+  catch (e) { alert(e.message); throw e; }
+  finally { loading(false); }
+}
+
+/* ===== Carregar ===== */
+async function carregar() {
+  try {
+    const r = await chamar({ action: 'list' });
+    forn = r.fornecedores; cont = r.contatos;
+    montarFiltros(); render();
+  } catch (e) {}
+}
+
+/* ===== Util ===== */
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+const fmtData = d => d ? d.split('-').reverse().join('/') : '—';
+const hojeISO = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+const qtdContatos = id => cont.filter(c => c.FornecedorID === id).length;
+
+function montarFiltros() {
+  const fs = document.getElementById('fStatus'), v1 = fs.value;
+  fs.innerHTML = '<option value="">Todos os status</option>' + STATUS.map(s => `<option>${s.nome}</option>`).join('');
+  fs.value = v1;
+  const cats = [...new Set(forn.map(f => f.Categoria).filter(Boolean))].sort();
+  const fc = document.getElementById('fCategoria'), v2 = fc.value;
+  fc.innerHTML = '<option value="">Todas as categorias</option>' + cats.map(c => `<option>${esc(c)}</option>`).join('');
+  fc.value = v2;
+  document.getElementById('listaCat').innerHTML = cats.map(c => `<option value="${esc(c)}">`).join('');
+  document.getElementById('fStatusForm').innerHTML = STATUS.map(s => `<option>${s.nome}</option>`).join('');
+}
+
+function limparFiltros() {
+  document.getElementById('fBusca').value = '';
+  document.getElementById('fStatus').value = '';
+  document.getElementById('fCategoria').value = '';
+  kpiFiltro = ''; render();
+}
+
+/* ===== Render ===== */
+function render() {
+  // KPIs
+  const cnt = n => forn.filter(f => f.Status === n).length;
+  const kp = [
+    { lbl:'Total', val:forn.length, f:'', cor:'#1e3a5f' },
+    { lbl:'A contatar', val:cnt('A contatar'), f:'A contatar', cor:'#64748b' },
+    { lbl:'Aguardando', val:cnt('Contatado'), f:'Contatado', cor:'#2563eb' },
+    { lbl:'Responderam', val:cnt('Respondeu'), f:'Respondeu', cor:'#16a34a' },
+    { lbl:'Sem resposta', val:cnt('Sem resposta'), f:'Sem resposta', cor:'#dc2626' },
+    { lbl:'Em avaliação', val:cnt('Em avaliação'), f:'Em avaliação', cor:'#d97706' },
+    { lbl:'Aprovados', val:cnt('Aprovado'), f:'Aprovado', cor:'#166534' }
+  ];
+  document.getElementById('kpis').innerHTML = kp.map(k => `
+    <div class="col-6 col-md"><div class="card kpi ${kpiFiltro === k.f && k.f ? 'active' : ''}" onclick="clicarKPI('${k.f}')">
+      <div class="card-body py-2"><div class="num" style="color:${k.cor}">${k.val}</div><div class="lbl">${k.lbl}</div></div></div></div>`).join('');
+
+  // Filtros
+  const busca = document.getElementById('fBusca').value.toLowerCase().trim();
+  const st = document.getElementById('fStatus').value || kpiFiltro;
+  const cat = document.getElementById('fCategoria').value;
+  const lista = forn.filter(f => {
+    if (st && f.Status !== st) return false;
+    if (cat && f.Categoria !== cat) return false;
+    if (busca && ![f.Empresa, f.CNPJ, f.Contato, f.Categoria, f.Email, f.Telefone, f.Cidade].join(' ').toLowerCase().includes(busca)) return false;
+    return true;
+  }).sort((a, b) => String(a.Empresa).localeCompare(String(b.Empresa), 'pt-BR'));
+
+  document.getElementById('tbody').innerHTML = lista.length ? lista.map(f => `
+    <tr>
+      <td><div class="fw-semibold">${esc(f.Empresa)}</div><div class="small text-muted">${esc(f.CNPJ)}${f.Cidade ? ' · ' + esc(f.Cidade) + (f.UF ? '/' + esc(f.UF) : '') : ''}</div></td>
+      <td>${esc(f.Categoria) || '—'}</td>
+      <td>${esc(f.Contato) || '—'}</td>
+      <td class="small">${f.Telefone ? '<div><i class="bi bi-telephone me-1"></i>' + esc(f.Telefone) + '</div>' : ''}${f.Email ? '<div><i class="bi bi-envelope me-1"></i>' + esc(f.Email) + '</div>' : ''}</td>
+      <td><span class="pill ${statusCls(f.Status)}">${esc(f.Status)}</span></td>
+      <td><span class="badge text-bg-light border">${qtdContatos(f.ID)}</span></td>
+      <td>${fmtData(f.UltimoContato)}</td>
+      <td class="text-end text-nowrap">
+        <button class="btn btn-sm btn-outline-primary" title="Contatos / histórico" onclick="abrirContatos('${f.ID}')"><i class="bi bi-telephone-plus"></i></button>
+        <button class="btn btn-sm btn-outline-secondary" title="Editar" onclick="abrirFornecedor('${f.ID}')"><i class="bi bi-pencil"></i></button>
+        <button class="btn btn-sm btn-outline-danger" title="Excluir" onclick="excluirFornecedor('${f.ID}')"><i class="bi bi-trash"></i></button>
+      </td>
+    </tr>`).join('') : '<tr><td colspan="8" class="text-center text-muted py-4">Nenhum fornecedor encontrado.</td></tr>';
+  document.getElementById('rodape').textContent = `${lista.length} de ${forn.length} fornecedores`;
+}
+
+function clicarKPI(f) {
+  kpiFiltro = (kpiFiltro === f) ? '' : f;
+  document.getElementById('fStatus').value = '';
+  render();
+}
+
+/* ===== Fornecedor ===== */
+function abrirFornecedor(id) {
+  const f = id ? forn.find(x => x.ID === id) : null;
+  document.getElementById('mdlFornTitulo').textContent = f ? 'Editar fornecedor' : 'Novo fornecedor';
+  document.getElementById('fID').value = f ? f.ID : '';
+  document.getElementById('fEmpresa').value = f ? f.Empresa : '';
+  document.getElementById('fCNPJ').value = f ? f.CNPJ : '';
+  document.getElementById('fCat').value = f ? f.Categoria : '';
+  document.getElementById('fContato').value = f ? f.Contato : '';
+  document.getElementById('fTel').value = f ? f.Telefone : '';
+  document.getElementById('fEmail').value = f ? f.Email : '';
+  document.getElementById('fCidade').value = f ? f.Cidade : '';
+  document.getElementById('fUF').value = f ? f.UF : '';
+  document.getElementById('fStatusForm').value = f ? f.Status : 'A contatar';
+  document.getElementById('fObs').value = f ? f.Observacoes : '';
+  mdlForn.show();
+}
+
+async function salvarFornecedor() {
+  const g = i => document.getElementById(i).value.trim();
+  if (!g('fEmpresa')) { alert('Informe o nome da empresa.'); return; }
+  const data = {
+    ID: g('fID'), Empresa: g('fEmpresa'), CNPJ: g('fCNPJ'), Categoria: g('fCat'), Contato: g('fContato'),
+    Telefone: g('fTel'), Email: g('fEmail'), Cidade: g('fCidade'), UF: g('fUF').toUpperCase(),
+    Status: g('fStatusForm'), Observacoes: g('fObs')
+  };
+  try {
+    await chamar({ action: 'saveFornecedor', data: JSON.stringify(data) });
+    mdlForn.hide(); await carregar();
+  } catch (e) {}
+}
+
+async function excluirFornecedor(id) {
+  const f = forn.find(x => x.ID === id);
+  if (!confirm(`Excluir "${f.Empresa}" e todo o histórico de contatos?`)) return;
+  try { await chamar({ action: 'deleteFornecedor', id }); await carregar(); } catch (e) {}
+}
+
+/* ===== Contatos ===== */
+function abrirContatos(id) {
+  const f = forn.find(x => x.ID === id);
+  document.getElementById('cFornID').value = id;
+  document.getElementById('cTitulo').textContent = f.Empresa;
+  document.getElementById('cSub').textContent = [f.Contato, f.Telefone, f.Email].filter(Boolean).join(' · ');
+  document.getElementById('cData').value = hojeISO();
+  document.getElementById('cObs').value = '';
+  desenharHistorico(id);
+  mdlCont.show();
+}
+
+function classeResultado(r) {
+  if (r === 'Atendeu' || r === 'Respondeu' || r === 'Enviou proposta') return 'res-ok';
+  if (r === 'Não atendeu' || r === 'Sem resposta') return 'res-no';
+  return 'res-wait';
+}
+
+function desenharHistorico(id) {
+  const lista = cont.filter(c => c.FornecedorID === id).sort((a, b) => String(b.Data).localeCompare(String(a.Data)));
+  document.getElementById('cLista').innerHTML = lista.length ? lista.map(c => `
+    <li class="${classeResultado(c.Resultado)}">
+      <div class="d-flex justify-content-between">
+        <div><strong>${esc(c.Resultado)}</strong> <span class="text-muted small">· ${esc(c.Canal)} · ${fmtData(c.Data)}${c.Responsavel ? ' · ' + esc(c.Responsavel) : ''}</span></div>
+        <button class="btn btn-sm btn-link text-danger p-0" title="Remover" onclick="excluirContato('${c.ID}')"><i class="bi bi-x-circle"></i></button>
+      </div>
+      ${c.Observacoes ? `<div class="small">${esc(c.Observacoes)}</div>` : ''}
+    </li>`).join('') : '<li class="text-muted">Nenhum contato registrado ainda.</li>';
+}
+
+async function salvarContato() {
+  const id = document.getElementById('cFornID').value;
+  const data = {
+    FornecedorID: id,
+    Data: document.getElementById('cData').value,
+    Canal: document.getElementById('cCanal').value,
+    Resultado: document.getElementById('cRes').value,
+    Responsavel: document.getElementById('cResp').value.trim(),
+    Observacoes: document.getElementById('cObs').value.trim()
+  };
+  try {
+    await chamar({ action: 'addContato', data: JSON.stringify(data) });
+    await carregar();
+    document.getElementById('cObs').value = '';
+    desenharHistorico(id);
+  } catch (e) {}
+}
+
+async function excluirContato(cid) {
+  if (!confirm('Remover este contato do histórico? (o status do fornecedor não é alterado)')) return;
+  const id = document.getElementById('cFornID').value;
+  try { await chamar({ action: 'deleteContato', id: cid }); await carregar(); desenharHistorico(id); } catch (e) {}
+}
+
+/* ===== Exportar ===== */
+function exportarCSV() {
+  const cols = ['Empresa','CNPJ','Categoria','Contato','Telefone','Email','Cidade','UF','Status','PrimeiroContato','UltimoContato','Observacoes'];
+  const linhas = [cols.join(';')].concat(forn.map(f => cols.map(c => '"' + String(f[c] == null ? '' : f[c]).replace(/"/g, '""') + '"').join(';')));
+  const blob = new Blob(['\ufeff' + linhas.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'fornecedores.csv'; a.click();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  mdlForn = new bootstrap.Modal('#mdlForn');
+  mdlCont = new bootstrap.Modal('#mdlCont');
+  montarFiltros(); render();
+  carregar();
+});
+</script>
+</body>
+</html>
