@@ -52,6 +52,12 @@
 
   #loading { position:fixed; inset:0; background:rgba(255,255,255,.7); display:none; align-items:center; justify-content:center; z-index:2000; }
   .overdue { color:#b91c1c; font-weight:600; }
+
+  /* Pop-up de observações ao passar o mouse */
+  .obs-pop { position:fixed; display:none; z-index:3000; max-width:340px; background:#1e3a5f; color:#fff;
+             padding:10px 12px; border-radius:8px; font-size:.8rem; line-height:1.4; pointer-events:none;
+             box-shadow:0 6px 18px rgba(15,23,42,.28); white-space:pre-wrap; word-break:break-word; }
+  .obs-pop .obs-tit { font-size:.68rem; text-transform:uppercase; letter-spacing:.04em; color:#b8c7dc; margin-bottom:3px; }
 </style>
 </head>
 <body>
@@ -188,6 +194,8 @@
   </div>
 </div>
 
+<div id="obsPop" class="obs-pop"><div class="obs-tit">Observações</div><div id="obsPopTxt"></div></div>
+
 <div id="loading"><div class="spinner-border text-primary"></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -295,7 +303,7 @@ function render() {
   }).sort((a, b) => String(a.Empresa).localeCompare(String(b.Empresa), 'pt-BR'));
 
   document.getElementById('tbody').innerHTML = lista.length ? lista.map(f => `
-    <tr>
+    <tr data-id="${esc(f.ID)}">
       <td><div class="fw-semibold">${esc(f.Empresa)}</div><div class="small text-muted">${esc(f.CNPJ)}${f.Cidade ? ' · ' + esc(f.Cidade) + (f.UF ? '/' + esc(f.UF) : '') : ''}</div></td>
       <td>${esc(f.Categoria) || '—'}</td>
       <td>${esc(f.Contato) || '—'}</td>
@@ -419,7 +427,40 @@ function exportarCSV() {
   a.href = URL.createObjectURL(blob); a.download = 'fornecedores.csv'; a.click();
 }
 
+/* ===== Pop-up de observações (hover) ===== */
+function configurarPopObs() {
+  const tbody = document.getElementById('tbody');
+  const pop = document.getElementById('obsPop');
+  const txt = document.getElementById('obsPopTxt');
+
+  const esconder = () => { pop.style.display = 'none'; };
+
+  function posicionar(e) {
+    const m = 14;
+    let x = e.clientX + m, y = e.clientY + m;
+    const w = pop.offsetWidth, h = pop.offsetHeight;
+    if (x + w > window.innerWidth - 8) x = e.clientX - w - m;
+    if (y + h > window.innerHeight - 8) y = e.clientY - h - m;
+    pop.style.left = Math.max(8, x) + 'px';
+    pop.style.top = Math.max(8, y) + 'px';
+  }
+
+  tbody.addEventListener('mousemove', e => {
+    const tr = e.target.closest('tr[data-id]');
+    if (!tr) { esconder(); return; }
+    const f = forn.find(x => x.ID === tr.dataset.id);
+    const obs = f && f.Observacoes ? String(f.Observacoes).trim() : '';
+    if (!obs) { esconder(); return; }          // sem observação: não mostra nada
+    if (txt.textContent !== obs) txt.textContent = obs;
+    pop.style.display = 'block';
+    posicionar(e);
+  });
+  tbody.addEventListener('mouseleave', esconder);
+  document.addEventListener('scroll', esconder, true);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  configurarPopObs();
   mdlForn = new bootstrap.Modal('#mdlForn');
   mdlCont = new bootstrap.Modal('#mdlCont');
   montarFiltros(); render();
